@@ -2,14 +2,13 @@ package reedsolomon
 
 import (
 	"fmt"
+	"log"
 )
 
 // RSCodec Reed-Solomon coder/decoder
 type RSCodec struct {
 	// Primitive polynomial for lookup table generation
-	Prim int
-	// Fulle field size (eg 255 for 8-bit symbols)
-	FieldSize int
+	Primitive int
 	// Number of ECC symbols in message
 	EccSymbols int
 }
@@ -21,11 +20,14 @@ var (
 
 // InitLookupTables fills exponential & log tables
 func (r *RSCodec) InitLookupTables() {
+	// Precompute the logarithm and anti-log tables for faster computation, using the provided primitive polynomial.
+	// The idea: b**(log_b(x), log_b(y)) == x * y, where b is the base or generator of the logarithm =>
+	// we can use any b to precompute logarithm and anti-log tables to use for multiplying two numbers x and y.
 	x := 1
 	for i := 0; i < 255; i++ {
 		exponents[i] = x
 		logs[x] = i
-		x = russianPeasantMult(x, 2, r.Prim, r.FieldSize+1, true)
+		x = russianPeasantMult(x, 2, r.Primitive, 256, true)
 	}
 
 	for i := 255; i < 512; i++ {
@@ -39,13 +41,13 @@ func (r *RSCodec) Encode(data string) (encoded []int) {
 	for i, ch := range data {
 		byteMessage[i] = int(ch)
 	}
-	fmt.Println("Original byte message:", byteMessage)
+	fmt.Println("Original message:", byteMessage)
 
-	generator := rsGeneratorPoly(r.EccSymbols)
+	g := rsGeneratorPoly(r.EccSymbols)
 
-	placeholder := make([]int, len(generator)-1)
+	placeholder := make([]int, len(g)-1)
 	// Pad the message and divide it by the irreducible gnerator polynomial
-	_, remainder := gfPolyDivision(append(byteMessage, placeholder...), generator)
+	_, remainder := gfPolyDivision(append(byteMessage, placeholder...), g)
 
 	encoded = append(byteMessage, remainder...)
 	return
@@ -54,6 +56,9 @@ func (r *RSCodec) Encode(data string) (encoded []int) {
 // Decode and correct encoded Reed-Solomon message
 func (r *RSCodec) Decode(data []int) ([]int, []int) {
 	decoded := data
+	if len(data) > 255 {
+		log.Fatalf("Message is too long, max allowed size is %d\n", 255)
+	}
 
 	synd := calcSyndromes(data, r.EccSymbols)
 	if checkSyndromes(synd) {
@@ -61,18 +66,18 @@ func (r *RSCodec) Decode(data []int) ([]int, []int) {
 		return decoded[:m], decoded[m:]
 	}
 
-	fsynd := calcForneySyndromes(synd, []int{}, len(decoded))
-
 	// compute the error locator polynomial using Berlekamp-Massey
-	errLoc := unknownErrorLocator(fsynd, r.EccSymbols)
+	errLoc := unknownErrorLocator(synd, r.EccSymbols)
 	// reverse errLoc
-	for i, j := 0, len(errLoc)-1; i < j; i, j = i+1, j-1 {
-		errLoc[i], errLoc[j] = errLoc[j], errLoc[i]
-	}
+	reverse(errLoc)
 	errPos := findErrors(errLoc, len(decoded))
 
 	decoded = correctErrors(decoded, synd, errPos)
+
 	synd = calcSyndromes(decoded, r.EccSymbols)
+	if !checkSyndromes(synd) {
+		log.Fatalf("Could not correct message\n")
+	}
 
 	m := len(decoded) - r.EccSymbols
 	return decoded[:m], decoded[m:]

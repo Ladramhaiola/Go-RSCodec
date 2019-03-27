@@ -1,5 +1,14 @@
 package reedsolomon
 
+import (
+	"log"
+	"math"
+)
+
+// ========================================== //
+//             Used Algorithms                //
+// ========================================== //
+
 // efficient implementation of Sieve algo
 // return list of primes less then N
 func sieveOfEratosthenes(N int) (primes []int) {
@@ -23,6 +32,23 @@ func negmod(d, m int) int {
 		return res + m
 	}
 	return res
+}
+
+// rotate the array
+func reverse(a []int) {
+	for i, j := 0, len(a)-1; i < j; i, j = i+1, j-1 {
+		a[i], a[j] = a[j], a[i]
+	}
+}
+
+func filter(a []int, f func(int) bool) []int {
+	b := make([]int, 0)
+	for _, v := range a {
+		if f(v) {
+			b = append(b, v)
+		}
+	}
+	return b
 }
 
 // Russian Peasant Multiplicaton algorithm in GF
@@ -50,14 +76,17 @@ func russianPeasantMult(x, y, prim, fieldsize int, carryless bool) (result int) 
 }
 
 func forney(message, errorPolynomial, locationPolynomial, errPos []int) []int {
+	// Forney algorithm to compute the magnitudes
+	// E will store the values that need to be corrected (error magnitude) to correct the input message
 	E := make([]int, len(message))
 
 	for i, location := range locationPolynomial {
 		locationInverse := gfInverse(location)
 
 		// Compute the formal derivative of the error locator polynomial
+		// the formal derivative of the locator is used as the denominator for Forney algorithm,
+		// which simply says that the ith error value is given by error_evaluator(gf_inverse(Xi)/error_locator_deriv(gf_inverse(Xi)))
 		errorLocatorPrimeTemp := []int{}
-
 		for j := 0; j < len(locationPolynomial); j++ {
 			if j != i {
 				errorLocatorPrimeTemp = append(errorLocatorPrimeTemp, gfSubstraction(1, gfMultiplication(locationInverse, locationPolynomial[j])))
@@ -75,10 +104,66 @@ func forney(message, errorPolynomial, locationPolynomial, errPos []int) []int {
 		y := gfPolyEvaluate(errorPolynomial, locationInverse)
 		y = gfMultiplication(gfPow(location, 1), y)
 
+		if errorLocatorPrime == 0 {
+			log.Println("Could not find magnitude")
+		}
+
 		// compute the magnitude
+		// magnitude is the correction vector
 		magnitude, _ := gfDivision(y, errorLocatorPrime)
 		E[errPos[i]] = magnitude
 	}
 
 	return E
+}
+
+// FindPrimePolys computes the list of prime polynomials for the given generator
+// and galois field characteristic exponent.
+func FindPrimePolys(cExponent int, fast, single bool) []int {
+	// Prime irreducible polynomial is used to avoid duplicate values in LUT
+	fieldCharac := int(math.Pow(2.0, float64(cExponent))) - 1
+	fieldCharacNext := int(math.Pow(2.0, float64(cExponent+1))) - 1
+
+	primCandidates := []int{}
+	if fast {
+		// generate maybe prime polynomials and check later if they really are irreducible
+		primCandidates = sieveOfEratosthenes(fieldCharacNext)
+		primCandidates = filter(primCandidates, func(x int) bool { return x > fieldCharac })
+	} else {
+		// try each possible prime polynomial
+		for i := fieldCharac + 2; i < fieldCharacNext; i += 2 {
+			primCandidates = append(primCandidates, i)
+		}
+	}
+
+	correctPrimes := []int{}
+	for _, prim := range primCandidates {
+		seen := make([]int, fieldCharac+1)
+		conflict := false
+
+		// second loop, build the whiole Galoi field
+		x := 1
+		for i := 0; i < fieldCharac; i++ {
+			// compute the next value in the field (ie, the next power of the generator)
+			x = russianPeasantMult(x, 2, prim, fieldCharac+1, true)
+
+			// Rejection criterion: if the value overflowed (above fieldCharac) or is duplicate of a
+			// previously generated power of alpha, then we reject the polynomial (not prime)
+			if x > fieldCharac || seen[x] == 1 {
+				conflict = true
+				break
+			} else {
+				seen[x] = 1
+			}
+		}
+
+		if !conflict {
+			correctPrimes = append(correctPrimes, prim)
+			if single {
+				return []int{prim}
+			}
+		}
+	}
+
+	return correctPrimes
 }

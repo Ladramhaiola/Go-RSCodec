@@ -2,6 +2,10 @@ package reedsolomon
 
 import "log"
 
+// ========================================== //
+//         Error search & correction          //
+// ========================================== //
+
 // compute the errors locator polynomial from the errors positions as input
 func calcErrorLocatorPoly(errorPositions []int) []int {
 	erasureLocations := []int{1}
@@ -12,9 +16,9 @@ func calcErrorLocatorPoly(errorPositions []int) []int {
 	return erasureLocations
 }
 
-// compute the error evaluator polynomial Omega from the
-// syndrome locator Sigma
 func calcErrorPoly(synd, erasureLocations []int, nsym int) []int {
+	// compute the error evaluator polynomial Omega from the
+	// syndrome locator Sigma
 	// Omega(x) = [ Synd(x) * Error_loc(x) ] mod x^(n-k+1)
 	placeholder := make([]int, nsym+1)
 	placeholder = append([]int{1}, placeholder...)
@@ -37,8 +41,9 @@ func unknownErrorLocator(synd []int, nsym int) []int {
 		syndShift = len(synd) - nsym
 	}
 
-	for i := 0; i < len(synd); i++ {
+	for i := 0; i < nsym; i++ {
 		K := i + syndShift
+		// compute the discrepance Delta
 		delta := synd[K]
 		for j := 1; j < len(errLoc); j++ {
 			delta ^= gfMultiplication(errLoc[len(errLoc)-(j+1)], synd[K-j])
@@ -75,6 +80,7 @@ func unknownErrorLocator(synd []int, nsym int) []int {
 }
 
 func findErrors(errLoc []int, messageLen int) []int {
+	// find the roots of polynomial by brute-force iter
 	errs := len(errLoc) - 1
 	errPos := []int{}
 
@@ -97,14 +103,14 @@ func correctErrors(message, synd, errPos []int) []int {
 		coefPos[i] = len(message) - 1 - p
 	}
 
+	// compute the error locator polynomial
 	errorLocatorPolynomial := calcErrorLocatorPoly(coefPos)
 
 	// reverse errLoc
-	for i, j := 0, len(synd)-1; i < j; i, j = i+1, j-1 {
-		synd[i], synd[j] = synd[j], synd[i]
-	}
+	reverse(synd)
 	errorPolynomial := calcErrorPoly(synd, errorLocatorPolynomial, len(errorLocatorPolynomial)-1)
 
+	// get the error location polynomial from the error positions in errPos
 	locationPolynomial := []int{}
 	for i := 0; i < len(coefPos); i++ {
 		l := 255 - coefPos[i]

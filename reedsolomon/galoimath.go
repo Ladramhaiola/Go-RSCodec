@@ -66,6 +66,7 @@ func gfPolyAddition(p, q []int) (result []int) {
 // multiply two polynomials inside Galois Field
 func gfPolyMultiplication(p, q []int) (result []int) {
 	result = make([]int, len(p)+len(q)-1)
+	// compute the polynomial multiplication like product of two vectors
 	for j := 0; j < len(q); j++ {
 		for i := 0; i < len(p); i++ {
 			result[i+j] ^= gfMultiplication(p[i], q[j])
@@ -101,6 +102,8 @@ func gfPolyDivision(divident, divisor []int) ([]int, []int) {
 		}
 	}
 	separator := len(divisor) - 1
+	// remainder has same size as the divisor, since it's
+	// what we couldn't divide from the divident
 	// return quotient, remainder
 	return result[:len(result)-separator], result[len(result)-separator:]
 }

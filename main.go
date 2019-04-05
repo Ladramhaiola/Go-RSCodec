@@ -30,4 +30,5 @@ func main() {
 		fmt.Print(string(i))
 	}
 	fmt.Println()
+	fmt.Println("Finished")
 }
